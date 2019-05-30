@@ -36,7 +36,7 @@
             varying vec3 normalEye;
             varying vec4 positionEye;
 
-            const vec3 lightPositionEye = vec3(-1.0, 3.0, 0.0);
+            const vec3 lightPositionEye = vec3(-10.0, 10.0, 0.0);
 
             void main(void) {
                 vec3 L = normalize(lightPositionEye - positionEye.xyz);
@@ -167,7 +167,22 @@
             }
 
 
+            var planeVertexPositionBuffer;
+
             function loadSceneOnGPU() {
+                planeVertexPositionBuffer = gl.createBuffer();
+                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
+                var vertices = [
+                     0.0, 0.0, 0.0,
+                     0.0, 1.0, 0.0,
+                     1.0, 1.0, 0.0,
+                     0.0, 0.0, 0.0,
+                     1.0, 1.0, 0.0,
+                     1.0, 0.0, 0.0
+                ];
+                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+                planeVertexPositionBuffer.itemSize = 3;
+                planeVertexPositionBuffer.numItems = 6;
             }
 
 
@@ -227,8 +242,8 @@
             var cameraMat = mat4.create();
             var rotationMat = mat4.create();
             mat4.identity(rotationMat);
-            var cameraPos = vec3.create();
-            cameraPos[2] -= 5;
+            mat4.rotate(rotationMat, deg2rad(30), [1, 0, 0]);
+            var cameraPos = [0, -1, -12];
             var currentlyPressedKeys = {};
 
             function handleKeyDown(event) {
@@ -258,8 +273,9 @@
                 }
                 if (currentlyPressedKeys[82]) { // R
                     console.log("R pressed!");
-                    cameraPos = [0, 0, 0];
+                    cameraPos = [0, -1, -12];
                     mat4.identity(rotationMat);
+                    mat4.rotate(rotationMat, deg2rad(30), [1, 0, 0]);
                 }
             }
 
@@ -295,8 +311,8 @@
                     console.log("MouseL dragging!");
                     var deltaX = event.clientX - lastMouseX;
                     var deltaY = event.clientY - lastMouseY;
-                    mat4.rotate(rotationMat, deg2rad(deltaX * 0.1), [0, 1, 0]);
-                    mat4.rotate(rotationMat, deg2rad(deltaY * 0.1), [1, 0, 0]);
+                    mat4.rotate(rotationMat, deg2rad(deltaX * 0.2), [0, 1, 0]);
+                    mat4.rotate(rotationMat, deg2rad(deltaY * 0.2), [1, 0, 0]);
                 }
                 if (currentlyPressedButtons[1] == true) { // Middle Button
                     console.log("MouseWheel dragging!");
@@ -338,7 +354,7 @@
                 gl.viewport(0, 0, gl.viewportWidth, gl.viewportHeight);
                 gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
 
-                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 100.0, pMatrix);
+                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 30.0, pMatrix);
                 
                 mat4.identity(cameraMat);
                 mat4.translate(cameraMat, cameraPos);
@@ -346,6 +362,21 @@
                 
                 mat4.identity(mvMatrix);
                 mat4.multiply(mvMatrix, cameraMat);
+                
+
+                //-----------------PLANE----------------
+                mvPushMatrix();
+                mat4.translate(mvMatrix, [-5.0, -1.0, -5.0]);
+                mat4.rotate(mvMatrix, deg2rad(90), [1.0, 0.0, 0.0]);
+                mat4.scale(mvMatrix, [10.0, 10.0, 10.0]);
+                
+                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
+                gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, planeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+                
+                sendMatricesToShader();
+                sendLightToShader([1.0, 1.0, 1.0]);
+                gl.drawArrays(gl.TRIANGLES, 0, planeVertexPositionBuffer.numItems);
+                mvPopMatrix();
 
 
                 //-----------------MODELS----------------
@@ -411,8 +442,9 @@
                 initGL(canvas);
                 initShaders();
                 
-                loadModelOnGPU("Teapot.json", [cameraPos[0] - 2, cameraPos[1], cameraPos[2]], [0.0, 0.0, 0.0], [0.1, 0.1, 0.1], [1.0, 0.5, 0.0]);
-                loadModelOnGPU("Laptop.json", [cameraPos[0] + 2, cameraPos[1] - 1, cameraPos[2]], [-90.0, 0.0, 0.0], [2.0, 2.0, 2.0], [0.0, 0.0, 1.0]);
+                loadSceneOnGPU();
+                loadModelOnGPU("Teapot.json", [-2, 0, 0], [0.0, 0.0, 0.0], [0.1, 0.1, 0.1], [1.0, 0.5, 0.0]);
+                loadModelOnGPU("Laptop.json", [2, -1, 0], [-90.0, 0.0, 0.0], [2.0, 2.0, 2.0], [0.0, 0.0, 1.0]);
 
                 gl.clearColor(0.0, 0.0, 0.0, 1.0);
                 gl.enable(gl.DEPTH_TEST);
