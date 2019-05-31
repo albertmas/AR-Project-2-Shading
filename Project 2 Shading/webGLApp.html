@@ -22,6 +22,8 @@
         <script id="light-fs" type="x-shader/x-fragment">
             precision mediump float;
 
+            uniform float useEncoder;
+
             vec4 encodeFloat(float depth)
             {
                 const vec4 bitShift = vec4(256 * 256 * 256, 256 * 256, 256, 1.0);
@@ -33,8 +35,10 @@
 
             void main(void)
             {
-                gl_FragColor = encodeFloat(gl_FragCoord.z);
-                //gl_FragColor = vec4(vec3(gl_FragCoord.z), 1.0);
+                if (useEncoder > 0.5)
+                    gl_FragColor = encodeFloat(gl_FragCoord.z);
+                else
+                    gl_FragColor = vec4(vec3(gl_FragCoord.z), 1.0);
             }
         </script>
 
@@ -82,6 +86,8 @@
 
             varying vec4 positionProjectedLightspace;
 
+            uniform float useEncoder;
+
             float decodeFloat(vec4 color)
             {
                 const vec4 bitShift = vec4(1.0 / (256.0 * 256.0 * 256.0), 1.0 / (256.0 * 256.0), 1.0 / 256.0, 1.0);
@@ -101,8 +107,12 @@
                 float lightFactor = 1.0;
                 vec3 positionTextureLightspace = 0.5 * positionProjectedLightspace.xyz / positionProjectedLightspace.w + vec3(0.5);
 
-                float depthFromLightTexture = decodeFloat(texture2D(lightDepth, positionTextureLightspace.xy));
-
+                float depthFromLightTexture;
+                if (useEncoder > 0.5)
+                    depthFromLightTexture = decodeFloat(texture2D(lightDepth, positionTextureLightspace.xy));
+                else
+                    depthFromLightTexture = texture2D(lightDepth, positionTextureLightspace.xy).x;
+                
                 float difference = positionTextureLightspace.z - depthFromLightTexture;
                 if(difference > 0.008){
                     lightFactor = 0.3;
@@ -206,6 +216,7 @@
                 shaderProgram.pMatrixLightUniform = gl.getUniformLocation(shaderProgram, "uPMatrixLight");
                 shaderProgram.mvMatrixLightUniform = gl.getUniformLocation(shaderProgram, "uMVMatrixLight");
 
+                shaderProgram.useEncoder = gl.getUniformLocation(shaderProgram, "useEncoder");
 
                 // Light shaders program
                 var lightFragmentShader = getShader("light-fs");
@@ -226,6 +237,8 @@
 
                 lightProgram.pMatrixLightUniform = gl.getUniformLocation(lightProgram, "uPMatrixLight");
                 lightProgram.mvMatrixLightUniform = gl.getUniformLocation(lightProgram, "uMVMatrixLight");
+                
+                lightProgram.useEncoder = gl.getUniformLocation(lightProgram, "useEncoder");
             }
 
             // Camera matrices
@@ -244,6 +257,8 @@
                 mat4.toInverseMat3(mvMatrix, nMatrix);
                 mat3.transpose(nMatrix);
                 gl.uniformMatrix3fv(shaderProgram.nMatrixUniform, false, nMatrix);
+
+                gl.uniform1f(shaderProgram.useEncoder, useEncoder);
             }
 
             function sendLightMatricesToCameraShader(){
@@ -254,6 +269,7 @@
             function sendMatricesToLightShader(){
                 gl.uniformMatrix4fv(lightProgram.pMatrixLightUniform, false, pMatrixLight);
                 gl.uniformMatrix4fv(lightProgram.mvMatrixLightUniform, false, mvMatrixLight);
+                gl.uniform1f(lightProgram.useEncoder, useEncoder);
             }
 
 
@@ -271,25 +287,6 @@
                     gl.uniform3f(shaderProgram.Ks_Uniform, lightColor[0] * 4, lightColor[1] * 4, lightColor[2] * 4);
                 }
                 gl.uniform1f(shaderProgram.Shininess_Uniform, 30.0);
-            }
-
-
-            var planeVertexPositionBuffer;
-
-            function loadSceneOnGPU() {
-                planeVertexPositionBuffer = gl.createBuffer();
-                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
-                var vertices = [
-                     0.0, 0.0, 0.0,
-                     0.0, 1.0, 0.0,
-                     1.0, 1.0, 0.0,
-                     0.0, 0.0, 0.0,
-                     1.0, 1.0, 0.0,
-                     1.0, 0.0, 0.0
-                ];
-                gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
-                planeVertexPositionBuffer.itemSize = 3;
-                planeVertexPositionBuffer.numItems = 6;
             }
 
 
@@ -428,12 +425,9 @@
                 mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 20.0, pMatrix);
                 
                 //--------------------Rendering code--------------------
-                mat4.identity(cameraMat);
-                mat4.translate(cameraMat, cameraPos);
-                mat4.multiply(cameraMat, rotationMat);
-                
                 mat4.identity(mvMatrix);
-                mat4.multiply(mvMatrix, cameraMat);
+                mat4.translate(mvMatrix, cameraPos);
+                mat4.multiply(mvMatrix, rotationMat);
                 
                 for(i = 0; i < modelsList.length; i++){
                     gl.bindBuffer(gl.ARRAY_BUFFER, modelsList[i].modelVertexPositionBuffer);
@@ -478,7 +472,6 @@
             }
 
 
-            var cameraMat = mat4.create();
             var rotationMat = mat4.create();
             mat4.identity(rotationMat);
             mat4.rotate(rotationMat, deg2rad(30), [1, 0, 0]);
@@ -496,6 +489,10 @@
                 if (currentlyPressedKeys[67]) { // C
                     console.log("C pressed!");
                     drawCamrera = !drawCamrera;
+                }
+                if (currentlyPressedKeys[78]) { // N
+                    console.log("N pressed!");
+                    useEncoder = !useEncoder;
                 }
             }
 
@@ -560,8 +557,11 @@
                     console.log("MouseL dragging!");
                     var deltaX = event.clientX - lastMouseX;
                     var deltaY = event.clientY - lastMouseY;
-                    mat4.rotate(rotationMat, deg2rad(deltaX * 0.2), [0, 1, 0]);
-                    mat4.rotate(rotationMat, deg2rad(deltaY * 0.2), [1, 0, 0]);
+                    var newRotationMat = mat4.create();
+                    mat4.identity(newRotationMat);
+                    mat4.rotate(newRotationMat, deg2rad(deltaX * 0.2), [0, 1, 0]);
+                    mat4.rotate(newRotationMat, deg2rad(deltaY * 0.2), [1, 0, 0]);
+                    mat4.multiply(newRotationMat, rotationMat, rotationMat);
                 }
                 if (currentlyPressedButtons[1] == true) { // Middle Button
                     console.log("MouseWheel dragging!");
@@ -635,6 +635,7 @@
 
             var drawShadows = true;
             var drawCamrera = true;
+            var useEncoder = 1.0;
 
             function renderingLoop() {
                 requestAnimFrame(renderingLoop);

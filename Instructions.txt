@@ -1,0 +1,6 @@
+Move Camera 	- WASD or MCB
+Rotate Camera	- LMB
+
+Activate/Deactivate camera	- C
+Activate/Deactivate shadows	- L
+Set shadows quality		- N
