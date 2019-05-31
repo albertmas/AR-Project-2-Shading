@@ -435,9 +435,9 @@
                 //--------------------Rendering code--------------------
                 for(i = 0; i < modelsList.length; i++){
                     gl.bindBuffer(gl.ARRAY_BUFFER, modelsList[i].modelVertexPositionBuffer);
-                    gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, modelsList[i].modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
+                    gl.vertexAttribPointer(lightProgram.vertexPositionAttribute, modelsList[i].modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ARRAY_BUFFER, modelsList[i].modelVertexNormalBuffer);
-                    gl.vertexAttribPointer(shaderProgram.vertexNormalAttribute, modelsList[i].modelVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+                    gl.vertexAttribPointer(lightProgram.vertexNormalAttribute, modelsList[i].modelVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, modelsList[i].modelVertexIndexBuffer);
 
                     mvPushLightMatrix();
@@ -465,8 +465,9 @@
                 gl.enableVertexAttribArray(shaderProgram.vertexPositionAttribute);
                 gl.enableVertexAttribArray(shaderProgram.vertexNormalAttribute);
 
-                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 30.0, pMatrix);
+                mat4.perspective(45, gl.viewportWidth / gl.viewportHeight, 0.1, 20.0, pMatrix);
                 
+                //--------------------Rendering code--------------------
                 mat4.identity(cameraMat);
                 mat4.translate(cameraMat, cameraPos);
                 mat4.multiply(cameraMat, rotationMat);
@@ -474,7 +475,6 @@
                 mat4.identity(mvMatrix);
                 mat4.multiply(mvMatrix, cameraMat);
                 
-                //--------------------Rendering code--------------------
 
                 //-----------------PLANE----------------
                 mvPushMatrix();
