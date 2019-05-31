@@ -6,53 +6,6 @@
         <script type="text/javascript" src="glMatrix-0.9.5.min.js"></script>
         <script type="text/javascript" src="webgl-utils.js"></script>
 
-        <script id="shader-vs" type="x-shader/x-vertex">
-            attribute vec3 aVertexPosition;
-            attribute vec3 aVertexNormal;
-
-            // Matrices
-            uniform mat4 uMVMatrix;
-            uniform mat4 uPMatrix;
-            uniform mat3 uNMatrix;
-
-            varying vec3 normalEye;
-            varying vec4 positionEye;
-
-            void main(void) {
-                normalEye = normalize(uNMatrix * aVertexNormal);
-                positionEye = uMVMatrix * vec4(aVertexPosition, 1.0);
-
-                gl_Position = uPMatrix * positionEye;
-            }
-        </script>
-        
-        <script id="shader-fs" type="x-shader/x-fragment">
-            precision mediump float;
-
-            uniform vec3 Ia, Id, Is; // Light color
-            uniform vec3 Ka, Kd, Ks; // Material color
-            uniform float shininess; // Material shininess
-
-            varying vec3 normalEye;
-            varying vec4 positionEye;
-
-            const vec3 lightPositionEye = vec3(-10.0, 10.0, 0.0);
-
-            void main(void) {
-                vec3 L = normalize(lightPositionEye - positionEye.xyz);
-                vec3 N = normalize(normalEye);
-                vec3 V = normalize(-positionEye.xyz);
-
-                float NdotL = max(dot(N, L), 0.0);
-
-                vec3 R = reflect(-L, N);
-                float RdotV = pow(max(dot(R, V), 0.0), shininess);
-
-                vec3 shadedColor = Ka * Ia + Kd * Id * NdotL + Ks * Is * RdotV;
-                gl_FragColor = vec4(shadedColor, 1.0);
-            }
-        </script>
-
         <script id="light-vs" type="x-shader/x-vertex">
             attribute vec3 aVertexPosition;
 
@@ -80,7 +33,8 @@
 
             void main(void)
             {
-                gl_FragColor = encodeFloat(gl_FragCoord.z);
+                //gl_FragColor = encodeFloat(gl_FragCoord.z);
+                gl_FragColor = vec4(vec3(gl_FragCoord.z), 1.0);
             }
         </script>
 
@@ -105,10 +59,9 @@
             void main(void) {
                 normalEye = normalize(uNMatrix * aVertexNormal);
                 positionEye = uMVMatrix * vec4(aVertexPosition, 1.0);
+                positionProjectedLightspace = uPMatrixLight * uMVMatrixLight * vec4(aVertexPosition, 1.0);
 
                 gl_Position = uPMatrix * positionEye;
-
-                positionProjectedLightspace = uPMatrixLight * uMVMatrixLight * vec4(aVertexPosition, 1.0);
             }
         </script>
 
@@ -145,17 +98,33 @@
                 vec3 R = reflect(-L, N);
                 float RdotV = pow(max(dot(R, V), 0.0), shininess);
 
-                vec3 shadedColor = Ka * Ia + Kd * Id * NdotL + Ks * Is * RdotV;
 
-                vec3 positionTextureLightspace = 0.5 * positionProjectedLightspace.xyz / positionProjectedLightspace.w + vec3(0.5);
-                vec3 depthFromLightTexture = vec3(decodeFloat(texture2D(lightDepth, positionTextureLightspace.xy)));
+                //vec3 positionTextureLightspace = 0.5 * positionProjectedLightspace.xyz / positionProjectedLightspace.w + vec3(0.5);
+                //float depthFromLightTexture = decodeFloat(texture2D(lightDepth, positionTextureLightspace.xy));
 
-                float lightFactor = 0.0;
-                if (depthFromLightTexture.z + 0.001 > positionTextureLightspace.z) {
-                    lightFactor = 1.0;
+                //float lightFactor = 0.0;
+                //if (depthFromLightTexture + 0.001 > positionTextureLightspace.z) {
+                //    lightFactor = 1.0;
+                //}
+                //shadedColor = shadedColor * lightFactor;
+
+                vec3 shadedColor = Ka * Ia + (Kd * Id * NdotL + Ks * Is * RdotV);
+
+                float darkFactor = 1.0;
+                // Convert the shadowPos in coordinates to get info from texture
+                vec2 fragCoordsInDepthTexture = (1.0 + positionProjectedLightspace.xy / positionProjectedLightspace.w) / 2.0;
+
+                // How far is the vertex we see from the camera to the light?
+                float depthFromLight = (1.0 + positionProjectedLightspace.z/ positionProjectedLightspace.w) / 2.0;
+
+                // What depth does the vertex have in the texture? (is it ocluded?)
+                float depthFromLightTexture = texture2D(lightDepth, fragCoordsInDepthTexture).x;
+
+                float difference = depthFromLight - depthFromLightTexture;
+                if(difference > 0.01){
+                    darkFactor = 0.3;
                 }
-
-                shadedColor = shadedColor * lightFactor;
+                shadedColor = shadedColor * darkFactor;
 
                 gl_FragColor = vec4(shadedColor, 1.0);
             }
@@ -311,7 +280,7 @@
                 gl.uniform3f(shaderProgram.Ka_Uniform, lightColor[0], lightColor[1], lightColor[2]);
                 gl.uniform3f(shaderProgram.Kd_Uniform, lightColor[0], lightColor[1], lightColor[2]);
                 gl.uniform3f(shaderProgram.Ks_Uniform, lightColor[0], lightColor[1], lightColor[2]);
-                gl.uniform1f(shaderProgram.Shininess_Uniform, 20.0);
+                gl.uniform1f(shaderProgram.Shininess_Uniform, 30.0);
             }
 
 
@@ -394,8 +363,8 @@
             {
                 rttFramebuffer = gl.createFramebuffer();
                 gl.bindFramebuffer(gl.FRAMEBUFFER, rttFramebuffer);
-                rttFramebuffer.width = 2048;
-                rttFramebuffer.height = 2048;
+                rttFramebuffer.width = 1024;
+                rttFramebuffer.height = 1024;
 
                 rttTexture = gl.createTexture();
                 gl.bindTexture(gl.TEXTURE_2D, rttTexture);
@@ -416,28 +385,30 @@
             }
 
 
+            var drawCamrera = true;
+
             function drawSceneFromLight()
             {
-                gl.bindFramebuffer(gl.FRAMEBUFFER, rttFramebuffer);
                 gl.viewport(0, 0, rttFramebuffer.width, rttFramebuffer.height);
-                gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
-
-                // pLightMatrix = mat4.ortho(-5.0, 5.0, -5.0, 5.0, 0.0, 30, null);
-
-                mat4.identity(mvMatrixLight);
-                // mat4.translate(mvMatrixLight, [0.0, 0.0, -10.0]);
-                // mat4.rotate(mvMatrixLight, deg2rad(90), [1, 0, 0]);
-
+                if (drawCamrera) {
+                    gl.bindFramebuffer(gl.FRAMEBUFFER, rttFramebuffer);
+                    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+                }
                 // Enabling shaders
                 gl.useProgram(lightProgram);
                 gl.enableVertexAttribArray(lightProgram.vertexPositionAttribute);
+
+                mat4.ortho(-5.0, 5.0, -5.0, 5.0, 0.0, 30, pMatrixLight);
+
+                mat4.identity(mvMatrixLight);
+                mat4.translate(mvMatrixLight, [0.0, 0.0, -10.0]);
+                mat4.rotate(mvMatrixLight, deg2rad(90), [1, 0, 0]);
                 
                 //--------------------Rendering code--------------------
                 for(i = 0; i < modelsList.length; i++){
                     gl.bindBuffer(gl.ARRAY_BUFFER, modelsList[i].modelVertexPositionBuffer);
                     gl.vertexAttribPointer(lightProgram.vertexPositionAttribute, modelsList[i].modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
-                    gl.bindBuffer(gl.ARRAY_BUFFER, modelsList[i].modelVertexNormalBuffer);
-                    gl.vertexAttribPointer(lightProgram.vertexNormalAttribute, modelsList[i].modelVertexNormalBuffer.itemSize, gl.FLOAT, false, 0, 0);
+                    
                     gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, modelsList[i].modelVertexIndexBuffer);
 
                     mvPushLightMatrix();
@@ -451,6 +422,7 @@
                     gl.drawElements(gl.TRIANGLES, modelsList[i].modelVertexIndexBuffer.numItems, gl.UNSIGNED_SHORT, 0);
                     mvPopLightMatrix();
                 }
+                
                 //--------------------End rendering code--------------------
                 gl.disableVertexAttribArray(lightProgram.vertexPositionAttribute);
                 gl.bindFramebuffer(gl.FRAMEBUFFER, null);
@@ -475,23 +447,6 @@
                 mat4.identity(mvMatrix);
                 mat4.multiply(mvMatrix, cameraMat);
                 
-
-                //-----------------PLANE----------------
-                mvPushMatrix();
-                mat4.translate(mvMatrix, [-5.0, 0.0, -5.0]);
-                mat4.rotate(mvMatrix, deg2rad(90), [1.0, 0.0, 0.0]);
-                mat4.scale(mvMatrix, [10.0, 10.0, 10.0]);
-                
-                gl.bindBuffer(gl.ARRAY_BUFFER, planeVertexPositionBuffer);
-                gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, planeVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
-                
-                sendMatricesToCameraShader();
-                sendLightToShader();
-                gl.drawArrays(gl.TRIANGLES, 0, planeVertexPositionBuffer.numItems);
-                mvPopMatrix();
-
-
-                //-----------------MODELS----------------
                 for(i = 0; i < modelsList.length; i++){
                     gl.bindBuffer(gl.ARRAY_BUFFER, modelsList[i].modelVertexPositionBuffer);
                     gl.vertexAttribPointer(shaderProgram.vertexPositionAttribute, modelsList[i].modelVertexPositionBuffer.itemSize, gl.FLOAT, false, 0, 0);
@@ -544,6 +499,11 @@
 
             function handleKeyDown(event) {
                 currentlyPressedKeys[event.keyCode] = true;
+                
+                if (currentlyPressedKeys[67]) { // C
+                    console.log("C pressed!");
+                    drawCamrera = !drawCamrera;
+                }
             }
 
             function handleKeyUp(event) {
@@ -685,7 +645,9 @@
                 requestAnimFrame(renderingLoop);
                 handleKeys();
                 drawSceneFromLight();
-                drawSceneFromCamera();
+                if (drawCamrera) {
+                    drawSceneFromCamera();
+                }
             }
 
 
@@ -706,7 +668,8 @@
                 initShaders();
                 initTextureFrameBuffer();
                 
-                loadSceneOnGPU();
+                //loadSceneOnGPU();
+                loadModelOnGPU("Plane.json", [0, -1, 0], [0.0, 0.0, 0.0], [1, 1, 1]);
                 loadModelOnGPU("Teapot.json", [-2, 0.8, 0], [0.0, 0.0, 0.0], [0.1, 0.1, 0.1], [1.0, 0.5, 0.0]);
                 loadModelOnGPU("Laptop.json", [2, 0, 0], [-90.0, 0.0, 0.0], [2.0, 2.0, 2.0], [0.0, 0.0, 1.0]);
 
